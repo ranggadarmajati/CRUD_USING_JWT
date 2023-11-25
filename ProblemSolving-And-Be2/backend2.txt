@@ -1,0 +1,47 @@
+1.
+SELECT * FROM employees e ;
+
+2.
+SELECT COUNT(id) as total_manager  FROM employees e WHERE e.job_title ='Manager';
+
+3.
+SELECT e.name, e.salary  FROM employees e WHERE e.department  ='Sales';
+
+4.
+SELECT AVG(e.salary) as avg_salary  from employees e WHERE YEAR(e.join_date) BETWEEN '2018' AND '2023' ; 
+
+5.
+SELECT e.id, e.name, e.job_title, e.department, SUM(sd.sales) as sum_sales FROM employees e JOIN sales_data sd ON sd.employee_id = e.id 
+GROUP BY sd.employee_id ORDER BY sum_sales DESC LIMIT 5;
+
+6.
+SELECT e.id, e.name, e.department, e.job_title, AVG(e.salary) as avg_salary FROM employees e GROUP BY e.department 
+HAVING avg_salary > (SELECT AVG(e2.salary) as avg_salary2 FROM employees e2 GROUP BY e2.department ORDER BY avg_salary2 LIMIT 1);
+
+7.
+SET @rank := 0;
+SELECT id, name, department, job_title, total_sales, RANK() OVER (ORDER BY total_sales DESC) as sales_rank
+FROM (
+    SELECT e.id, e.name, e.department, e.job_title, SUM(sd.sales) as total_sales
+    FROM employees e
+    JOIN sales_data sd ON e.id = sd.employee_id
+    GROUP BY e.id, e.name, e.department, e.job_title
+    ORDER BY total_sales DESC
+    LIMIT 5
+) AS ranked_sales;
+
+8.
+DELIMITER //
+
+CREATE PROCEDURE GetDepartmentEmployees(IN department_name VARCHAR(255))
+BEGIN
+    SELECT e.id, e.name, e.salary
+    FROM employees e
+    WHERE e.department = department_name;
+
+    SELECT SUM(e.salary) as total_salary
+    FROM employees e
+    WHERE e.department = department_name;
+END //
+
+DELIMITER ;
