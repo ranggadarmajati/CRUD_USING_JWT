@@ -44,7 +44,7 @@ $ php artisan jwt:secret
 ```
 8. Migrate Database Tables:
 ```bash
-$ php artisan db:migrate
+$ php artisan migrate
 ```
 9. Create seed data:
 ```bash
@@ -105,5 +105,204 @@ $ php artisan test --testsuite=Feature --stop-on-failure
 
   Tests:  10 passed
   Time:   0.32s
-
 ```
+## Installation on Docker with Nginx web server
+1. Create your Environment file, copy .env.example and edit the parts listed below, after that save as .env
+```python
+...
+
+DB_CONNECTION=mysql
+DB_HOST=db
+DB_PORT=3306
+DB_DATABASE=todolist
+DB_USERNAME=your_database_username
+DB_PASSWORD=your_database_password
+
+...
+```
+2. Setting up Nginx configuration
+To set up Nginx, we’ll share a todolist.conf file that will configure how the application is served. Create the docker-compose/nginx folder with:
+```bash
+$ mkdir -p docker-compose/nginx
+```
+Open a new file named todolist.conf within that directory:
+```bash
+$ nano docker-compose/nginx/todolist.conf
+```
+Copy the following Nginx configuration to that file:
+```conf
+server {
+    listen 80;
+    index index.php index.html;
+    error_log  /var/log/nginx/error.log;
+    access_log /var/log/nginx/access.log;
+    root /var/www/public;
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass app:9000;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+    }
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+        gzip_static on;
+    }
+}
+```
+This file will configure Nginx to listen on port 80 and use index.php as default index page. It will set the document root to /var/www/public, and then configure Nginx to use the app service on port 9000 to process *.php files.
+
+Save and close the file when you’re done editing.
+
+3. Setting up Mysql configuration
+To set up the MySQL database, we’ll share a database dump that will be imported when the container is initialized. This is a feature provided by the MySQL 5.7 image we’ll be using on that container.
+
+Create a new folder for your MySQL initialization files inside the docker-compose folder:
+```bash
+$ mkdir docker-compose/mysql
+```
+Open a new .sql file:
+```bash
+$ nano docker-compose/mysql/init_db.sql
+```
+Add the following code to the file:
+```bash
+CREATE DATABASE `todolist`;
+```
+4. Creating a Multi-Container Environment with Docker Compose.
+Create a new docker-compose.yml file at the root of the application folder:
+```bash
+$ nano docker-compose.yml
+```
+Add the following code to the file:
+```yml
+version: "3.7"
+services:
+  app:
+    build:
+      args:
+        user: yourname
+        uid: 1000
+      context: ./
+      dockerfile: Dockerfile
+    image: todolist
+    container_name: todolist-app
+    environment:
+      - DB_HOST=db
+    restart: unless-stopped
+    working_dir: /var/www/
+    volumes:
+      - ./:/var/www
+    networks:
+      - todolist-network
+
+  db:
+    image: mysql:8.0
+    container_name: todolist-db
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+    volumes:
+      - ./docker-compose/mysql:/docker-entrypoint-initdb.d
+    networks:
+      - todolist-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: todolist-nginx
+    restart: unless-stopped
+    ports:
+      - 8000:80
+    volumes:
+      - ./:/var/www
+      - ./docker-compose/nginx:/etc/nginx/conf.d/
+    networks:
+      - todolist-network
+
+networks:
+  todolist-network:
+    driver: bridge
+```
+Make sure you save the file when you’re done.
+
+5. Running the Application with Docker Compose
+```bash
+$ docker-compose build app
+```
+This command might take a few minutes to complete.
+
+When the build is finished, you can run the environment in background mode with:
+```bash
+$ docker-compose up -d
+```
+This will run your containers in the background. To show information about the state of your active services, run:
+```bash
+$ docker-compose ps
+```
+You'll see output like this:
+```bash
+Output
+Name                    Command              State                  Ports                
+-----------------------------------------------------------------------------------------------
+todolist-app     docker-php-entrypoint php-fpm   Up      9000/tcp                            
+todolist-db      docker-entrypoint.sh mysqld     Up      3306/tcp, 33060/tcp                 
+todolist-nginx   nginx -g daemon off;            Up      0.0.0.0:8000->80/tcp,:::8000->80/tcp
+```
+Your environment is now up and running, but we still need to execute a couple commands to finish setting up the application. You can use the docker-compose exec command to execute commands in the service containers, such as an ls -l to show detailed information about files in the application directory:
+```bash
+$ docker-compose exec app ls -l
+Output
+total 256
+-rw-r--r-- 1 yourname yourname    737 Apr 18 14:21 Dockerfile
+-rw-r--r-- 1 yourname yourname    101 Jan  7  2020 README.md
+drwxr-xr-x 6 yourname yourname   4096 Jan  7  2020 app
+-rwxr-xr-x 1 yourname yourname   1686 Jan  7  2020 artisan
+drwxr-xr-x 3 yourname yourname   4096 Jan  7  2020 bootstrap
+-rw-r--r-- 1 yourname yourname   1501 Jan  7  2020 composer.json
+-rw-r--r-- 1 yourname yourname 179071 Jan  7  2020 composer.lock
+drwxr-xr-x 2 yourname yourname   4096 Jan  7  2020 config
+drwxr-xr-x 5 yourname yourname   4096 Jan  7  2020 database
+drwxr-xr-x 4 yourname yourname   4096 Apr 18 14:22 docker-compose
+-rw-r--r-- 1 yourname yourname   1017 Apr 18 14:29 docker-compose.yml
+-rw-r--r-- 1 yourname yourname   1013 Jan  7  2020 package.json
+-rw-r--r-- 1 yourname yourname   1405 Jan  7  2020 phpunit.xml
+drwxr-xr-x 2 yourname yourname   4096 Jan  7  2020 public
+-rw-r--r-- 1 yourname yourname    273 Jan  7  2020 readme.md
+drwxr-xr-x 6 yourname yourname   4096 Jan  7  2020 resources
+drwxr-xr-x 2 yourname yourname   4096 Jan  7  2020 routes
+-rw-r--r-- 1 yourname yourname    563 Jan  7  2020 server.php
+drwxr-xr-x 5 yourname yourname   4096 Jan  7  2020 storage
+drwxr-xr-x 4 yourname yourname   4096 Jan  7  2020 tests
+-rw-r--r-- 1 yourname yourname    538 Jan  7  2020 webpack.mix.js
+```
+We’ll now run composer install to install the application dependencies:
+```bash
+$ docker-compose exec app composer install
+```
+The last thing we need to do before testing the application is to generate a unique application key with the artisan Laravel command-line tool. This key is used to encrypt user sessions and other sensitive data:
+```bash
+$ docker-compose exec app php artisan key:generate
+```
+```bash
+$ docker-compose exec app php artisan vendor:publish --provider="Tymon\JWTAuth\Providers\LaravelServiceProvider"
+```
+```bash
+$ docker-compose exec app php artisan jwt:secret
+```
+```bash
+$ docker-compose exec app php artisan migrate
+```
+```bash
+$ docker-compose exec app php artisan db:seed
+```
+Now go to your browser and access your server’s domain name or IP address on port 8000:
+```bash
+http://server_domain_or_IP:8000
+```
+Note: In case you are running this demo on your local machine, use http://localhost:8000 to access the application from your browser.
